@@ -1376,7 +1376,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		SDL2.dll = LoadLibraryA("SDL2_orig.dll");
 		if (!SDL2.dll)
 		{
-			MessageBoxA(0, "Cannot load original SDL2.dll library", "Proxy", MB_ICONERROR);
+			MessageBoxA(0, "Cannot load original SDL2.dll library from SDL2_orig.dll", "Proxy", MB_ICONERROR);
 			ExitProcess(0);
 		}
 		SDL2.OrignalSDL_AddEventWatch = GetProcAddress(SDL2.dll, "SDL_AddEventWatch");
