@@ -1,4 +1,9 @@
 #include <windows.h>
+#include <shlwapi.h>
+#include <stdio.h>
+#pragma comment(lib, "shlwapi.lib")
+
+#include "minhook/MinHook.h"
 
 struct SDL2_dll { 
 	HMODULE dll;
@@ -2066,6 +2071,63 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	return TRUE;
 }
 
-static void install_hook() {
+typedef VOID(WINAPI* GetSystemTimeAsFileTime_t)(LPFILETIME);
+typedef VOID(WINAPI* GetSystemTime_t)(LPSYSTEMTIME);
 
+GetSystemTimeAsFileTime_t Orig_GetSystemTimeAsFileTime = nullptr;
+GetSystemTime_t Orig_GetSystemTime = nullptr;
+
+static ULONGLONG fakeTime = 0;
+
+static ULONGLONG GetFakeTime()
+{
+	FILE *file = nullptr;
+	_wfopen_s(&file, L"FF4_time.txt", L"r");
+
+	// 2021-10-24 14:20:00 UTC, 1635085200, New Game Manip Time
+	ULONGLONG res = 132795588000000000ULL;
+
+	if (!file)
+		return res;
+
+	unsigned long long unix_time = 0;
+	if (fscanf_s(file, "%llu", &unix_time) == 1)
+		res = (unix_time + 11644473600ULL) * 10000000ULL;
+
+	fclose(file);
+	return res;
+}
+
+void WINAPI My_GetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
+{
+	lpSystemTimeAsFileTime->dwLowDateTime = (DWORD)(fakeTime);
+	lpSystemTimeAsFileTime->dwHighDateTime = (DWORD)(fakeTime >> 32);
+}
+
+void WINAPI My_GetSystemTime(LPSYSTEMTIME lpSystemTime)
+{
+	FILETIME ft;
+	ft.dwLowDateTime = (DWORD)(fakeTime);
+	ft.dwHighDateTime = (DWORD)(fakeTime >> 32);
+	FileTimeToSystemTime(&ft, lpSystemTime);
+}
+
+static void install_hook()
+{
+	wchar_t exepath[MAX_PATH];
+	if (GetModuleFileNameW(NULL, exepath, MAX_PATH) == 0)
+		return;
+
+	LPCWSTR filename = PathFindFileNameW(exepath);
+
+	if (_wcsicmp(filename, L"FF4.exe") != 0)
+		return;
+
+	fakeTime = GetFakeTime();
+
+	MH_Initialize();
+	MH_CreateHook(&GetSystemTimeAsFileTime, &My_GetSystemTimeAsFileTime, (LPVOID*)&Orig_GetSystemTimeAsFileTime);
+	MH_EnableHook(&GetSystemTimeAsFileTime);
+	MH_CreateHook(&GetSystemTime, &My_GetSystemTime, (LPVOID*)&Orig_GetSystemTime);
+	MH_EnableHook(&GetSystemTime);
 }
