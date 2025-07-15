@@ -2074,13 +2074,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 typedef VOID(WINAPI* GetSystemTimeAsFileTime_t)(LPFILETIME);
 typedef VOID(WINAPI* GetSystemTime_t)(LPSYSTEMTIME);
-typedef time_t(__cdecl* func_time)(time_t);
 typedef __time32_t(__cdecl* func_time32_t)(__time32_t);
 typedef __time64_t(__cdecl* func_time64_t)(__time64_t);
 
 GetSystemTimeAsFileTime_t Orig_GetSystemTimeAsFileTime = nullptr;
 GetSystemTime_t Orig_GetSystemTime = nullptr;
-func_time Orig_time = nullptr;
 func_time32_t Orig__time32 = nullptr;
 func_time64_t Orig__time64 = nullptr;
 
@@ -2120,13 +2118,6 @@ void WINAPI My_GetSystemTime(LPSYSTEMTIME lpSystemTime)
 	FileTimeToSystemTime(&ft, lpSystemTime);
 }
 
-time_t __cdecl My_time(time_t* destTime)
-{
-	if (destTime)
-		*destTime = (time_t)fakeTime;
-	return (time_t)fakeTime;
-}
-
 __time32_t __cdecl My__time32(__time32_t *destTime)
 {
 	if (destTime)
@@ -2159,8 +2150,6 @@ static void install_hook()
 	MH_EnableHook(&GetSystemTimeAsFileTime);
 	MH_CreateHook(&GetSystemTime, &My_GetSystemTime, (LPVOID*)&Orig_GetSystemTime);
 	MH_EnableHook(&GetSystemTime);
-	MH_CreateHook(&time, &My_time, (LPVOID*)&Orig_time);
-	MH_EnableHook(&time);
 	MH_CreateHook(&_time32, &My__time32, (LPVOID*)&Orig__time32);
 	MH_EnableHook(&_time32);
 	MH_CreateHook(&_time64, &My__time64, (LPVOID*)&Orig__time64);
