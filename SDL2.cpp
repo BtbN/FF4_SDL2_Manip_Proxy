@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <shlwapi.h>
 #include <stdio.h>
+#include <time.h>
 #pragma comment(lib, "shlwapi.lib")
 
 #include "minhook/MinHook.h"
@@ -2073,9 +2074,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 typedef VOID(WINAPI* GetSystemTimeAsFileTime_t)(LPFILETIME);
 typedef VOID(WINAPI* GetSystemTime_t)(LPSYSTEMTIME);
+typedef time_t(__cdecl* func_time)(time_t);
+typedef __time32_t(__cdecl* func_time32_t)(__time32_t);
+typedef __time64_t(__cdecl* func_time64_t)(__time64_t);
 
 GetSystemTimeAsFileTime_t Orig_GetSystemTimeAsFileTime = nullptr;
 GetSystemTime_t Orig_GetSystemTime = nullptr;
+func_time Orig_time = nullptr;
+func_time32_t Orig__time32 = nullptr;
+func_time64_t Orig__time64 = nullptr;
 
 static ULONGLONG fakeTime = 0;
 
@@ -2084,32 +2091,54 @@ static ULONGLONG GetFakeTime()
 	FILE *file = nullptr;
 	_wfopen_s(&file, L"FF4_time.txt", L"r");
 
-	// 2021-10-24 14:20:00 UTC, 1635085200, New Game Manip Time
-	ULONGLONG res = 132795588000000000ULL;
+	// 2021-10-24 14:20:00 UTC, New Game Manip Time
+	ULONGLONG res = 1635085200ULL;
 
 	if (!file)
 		return res;
 
 	unsigned long long unix_time = 0;
 	if (fscanf_s(file, "%llu", &unix_time) == 1)
-		res = (unix_time + 11644473600ULL) * 10000000ULL;
+		res = unix_time;
 
 	fclose(file);
+
 	return res;
 }
 
 void WINAPI My_GetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
 {
-	lpSystemTimeAsFileTime->dwLowDateTime = (DWORD)(fakeTime);
-	lpSystemTimeAsFileTime->dwHighDateTime = (DWORD)(fakeTime >> 32);
+	ULONGLONG ftime = (fakeTime + 11644473600ULL) * 10000000ULL;
+	lpSystemTimeAsFileTime->dwLowDateTime = (DWORD)(ftime);
+	lpSystemTimeAsFileTime->dwHighDateTime = (DWORD)(ftime >> 32);
 }
 
 void WINAPI My_GetSystemTime(LPSYSTEMTIME lpSystemTime)
 {
-	FILETIME ft;
-	ft.dwLowDateTime = (DWORD)(fakeTime);
-	ft.dwHighDateTime = (DWORD)(fakeTime >> 32);
+	ULONGLONG ftime = (fakeTime + 11644473600ULL) * 10000000ULL;
+	FILETIME ft = { (DWORD)(ftime), (DWORD)(ftime >> 32) };
 	FileTimeToSystemTime(&ft, lpSystemTime);
+}
+
+time_t __cdecl My_time(time_t* destTime)
+{
+	if (destTime)
+		*destTime = (time_t)fakeTime;
+	return (time_t)fakeTime;
+}
+
+__time32_t __cdecl My__time32(__time32_t *destTime)
+{
+	if (destTime)
+		*destTime = (__time32_t)fakeTime;
+	return (__time32_t)fakeTime;
+}
+
+__time64_t __cdecl My__time64(__time64_t *destTime)
+{
+	if (destTime)
+		*destTime = (__time64_t)fakeTime;
+	return (__time64_t)fakeTime;
 }
 
 static void install_hook()
@@ -2130,4 +2159,10 @@ static void install_hook()
 	MH_EnableHook(&GetSystemTimeAsFileTime);
 	MH_CreateHook(&GetSystemTime, &My_GetSystemTime, (LPVOID*)&Orig_GetSystemTime);
 	MH_EnableHook(&GetSystemTime);
+	MH_CreateHook(&time, &My_time, (LPVOID*)&Orig_time);
+	MH_EnableHook(&time);
+	MH_CreateHook(&_time32, &My__time32, (LPVOID*)&Orig__time32);
+	MH_EnableHook(&_time32);
+	MH_CreateHook(&_time64, &My__time64, (LPVOID*)&Orig__time64);
+	MH_EnableHook(&_time64);
 }
