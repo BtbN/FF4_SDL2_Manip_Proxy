@@ -5,6 +5,7 @@
 #pragma comment(lib, "shlwapi.lib")
 
 #include "minhook/MinHook.h"
+#include "resource.h"
 
 struct SDL2_dll { 
 	HMODULE dll;
@@ -1367,6 +1368,7 @@ __declspec(naked) void FakeSDL_wcslcat() { _asm { jmp[SDL2.OrignalSDL_wcslcat] }
 __declspec(naked) void FakeSDL_wcslcpy() { _asm { jmp[SDL2.OrignalSDL_wcslcpy] } }
 __declspec(naked) void FakeSDL_wcslen() { _asm { jmp[SDL2.OrignalSDL_wcslen] } }
 
+static HMODULE dll_module = 0;
 static void install_hook();
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
@@ -1374,6 +1376,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	{
 	case DLL_PROCESS_ATTACH:
 	{
+		dll_module = hModule;
+
 		SDL2.dll = LoadLibraryA("SDL2_orig.dll");
 		if (!SDL2.dll)
 		{
@@ -2074,62 +2078,125 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 typedef VOID(WINAPI* GetSystemTimeAsFileTime_t)(LPFILETIME);
 typedef VOID(WINAPI* GetSystemTime_t)(LPSYSTEMTIME);
-typedef __time32_t(__cdecl* func_time32_t)(__time32_t);
-typedef __time64_t(__cdecl* func_time64_t)(__time64_t);
-
-GetSystemTimeAsFileTime_t Orig_GetSystemTimeAsFileTime = nullptr;
-GetSystemTime_t Orig_GetSystemTime = nullptr;
-func_time32_t Orig__time32 = nullptr;
-func_time64_t Orig__time64 = nullptr;
+typedef __time32_t(__cdecl* func_time32_t)(__time32_t*);
+typedef __time64_t(__cdecl* func_time64_t)(__time64_t*);
 
 static ULONGLONG fakeTime = 0;
 
-static ULONGLONG GetFakeTime()
+static INT_PTR CALLBACK DialogRes(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	FILE *file = nullptr;
-	_wfopen_s(&file, L"FF4_time.txt", L"r");
-
-	// 2021-10-24 14:20:00 UTC, New Game Manip Time
-	ULONGLONG res = 1635085200ULL;
-
-	if (!file)
-		return res;
-
-	unsigned long long unix_time = 0;
-	if (fscanf_s(file, "%llu", &unix_time) == 1)
-		res = unix_time;
-
-	fclose(file);
-
-	return res;
+	if (msg == WM_COMMAND)
+	{
+		switch (LOWORD(wParam))
+		{
+		case BUTTON_NEWGAME:
+			fakeTime = 1635085200ULL;
+			break;
+		case BUTTON_OCTOMAMMOTH:
+			fakeTime = 1742044140ULL;
+			break;
+		case BUTTON_MYSIDIAORDEALS:
+			fakeTime = 1619274008ULL;
+			break;
+		case BUTTON_RAINBOWPUDDING:
+			fakeTime = 1743246991ULL;
+			break;
+		case BUTTON_UNDERWORLD:
+			fakeTime = 1748539440ULL;
+			break;
+		case BUTTON_LUGAE:
+			fakeTime = 1740868291ULL;
+			break;
+		case BUTTON_BABILRUBI:
+			fakeTime = 1619274017ULL;
+			break;
+		case BUTTON_SEALEDCAVE:
+			fakeTime = 1749468806ULL;
+			break;
+		case BUTTON_SAFETRAVEL:
+			fakeTime = 1620744300ULL;
+			break;
+		case BUTTON_DRAGONONECYCLE:
+			fakeTime = 1748166922ULL;
+			break;
+		case BUTTON_PINKTAIL:
+			fakeTime = 1619274027ULL;
+			break;
+		case BUTTON_NOMANIP:
+			fakeTime = MAXULONGLONG;
+			break;
+		default:
+			return FALSE;
+		}
+		EndDialog(hDlg, 0);
+		return TRUE;
+	}
+	else if (msg == WM_CLOSE)
+	{
+		ExitProcess(0);
+		EndDialog(hDlg, 0);
+		return TRUE;
+	}
+	return FALSE;
 }
 
+static ULONGLONG GetFakeTime()
+{
+	if (fakeTime != 0)
+		return fakeTime;
+
+	DialogBox((HINSTANCE)dll_module, MAKEINTRESOURCE(IDD_MANIP_DIALOG), NULL, DialogRes);
+	return fakeTime;
+}
+
+GetSystemTimeAsFileTime_t Orig_GetSystemTimeAsFileTime = nullptr;
 void WINAPI My_GetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime)
 {
-	ULONGLONG ftime = (fakeTime + 11644473600ULL) * 10000000ULL;
+	if (fakeTime == MAXULONGLONG) {
+		Orig_GetSystemTimeAsFileTime(lpSystemTimeAsFileTime);
+		return;
+	}
+
+	ULONGLONG ftime = (GetFakeTime() + 11644473600ULL) * 10000000ULL;
 	lpSystemTimeAsFileTime->dwLowDateTime = (DWORD)(ftime);
 	lpSystemTimeAsFileTime->dwHighDateTime = (DWORD)(ftime >> 32);
 }
 
+GetSystemTime_t Orig_GetSystemTime = nullptr;
 void WINAPI My_GetSystemTime(LPSYSTEMTIME lpSystemTime)
 {
-	ULONGLONG ftime = (fakeTime + 11644473600ULL) * 10000000ULL;
+	if (fakeTime == MAXULONGLONG) {
+		Orig_GetSystemTime(lpSystemTime);
+		return;
+	}
+
+	ULONGLONG ftime = (GetFakeTime() + 11644473600ULL) * 10000000ULL;
 	FILETIME ft = { (DWORD)(ftime), (DWORD)(ftime >> 32) };
 	FileTimeToSystemTime(&ft, lpSystemTime);
 }
 
+func_time32_t Orig__time32 = nullptr;
 __time32_t __cdecl My__time32(__time32_t *destTime)
 {
+	if (fakeTime == MAXULONGLONG)
+		return Orig__time32(destTime);
+
+	ULONGLONG res = GetFakeTime();
 	if (destTime)
-		*destTime = (__time32_t)fakeTime;
-	return (__time32_t)fakeTime;
+		*destTime = (__time32_t)res;
+	return (__time32_t)res;
 }
 
+func_time64_t Orig__time64 = nullptr;
 __time64_t __cdecl My__time64(__time64_t *destTime)
 {
+	if (fakeTime == MAXULONGLONG)
+		return Orig__time64(destTime);
+
+	ULONGLONG res = GetFakeTime();
 	if (destTime)
-		*destTime = (__time64_t)fakeTime;
-	return (__time64_t)fakeTime;
+		*destTime = (__time64_t)res;
+	return (__time64_t)res;
 }
 
 static void install_hook()
@@ -2142,8 +2209,6 @@ static void install_hook()
 
 	if (_wcsicmp(filename, L"FF4.exe") != 0)
 		return;
-
-	fakeTime = GetFakeTime();
 
 	MH_Initialize();
 	MH_CreateHook(&GetSystemTimeAsFileTime, &My_GetSystemTimeAsFileTime, (LPVOID*)&Orig_GetSystemTimeAsFileTime);
